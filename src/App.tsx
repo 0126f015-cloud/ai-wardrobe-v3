@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Plus, Trash2, Shirt, CheckCircle2, CloudSun, Sparkles, Loader2, X, User, Wand2, Ruler, ThermometerSun, Pencil, LayoutGrid, Home, Download } from 'lucide-react';
+import { Camera, Plus, Trash2, Shirt, CheckCircle2, CloudSun, Sparkles, Loader2, X, User, Wand2, Ruler, ThermometerSun, Pencil, Download } from 'lucide-react';
 
 // --- Gemini API Configuration ---
-// 注意：部署到 Vercel 後，您需要設定環境變數或在此填入您的 API Key
-const apiKey = "AIzaSyCUcwoLxv_aCAEnl3fMurNwzwBU_wUFPj8"; 
+const apiKey = ""; 
 
 // 定義 Gemini API 的請求結構類型
 interface GeminiPart {
@@ -128,8 +127,7 @@ const App = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [isEditingStats, setIsEditingStats] = useState(false);
   
-  // Mobile Tab State
-  const [mobileView, setMobileView] = useState<'fitting' | 'wardrobe'>('fitting');
+  // Removed mobileView state (No longer needed for vertical scroll layout)
 
   // Body Model State
   const [bodyImage, setBodyImage] = useState<string | null>(null);
@@ -234,13 +232,11 @@ const App = () => {
   const handleWeatherRecommendation = async () => {
     if (wardrobe.length === 0) {
         alert("衣櫃是空的，請先新增衣物！");
-        setMobileView('wardrobe'); 
         return;
     }
     setIsThinking(true);
     setWeatherAdvice(null);
     setSelectedItems([]);
-    setMobileView('fitting'); 
 
     try {
         const weathers = ["氣溫 12°C，寒流來襲，下雨", "氣溫 28°C，炎熱晴朗", "氣溫 20°C，舒適涼爽", "氣溫 16°C，風大"];
@@ -547,12 +543,14 @@ const App = () => {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Left: Selection & Recommendation Area (Fitting Room) */}
-        <div className={`flex-1 relative bg-slate-50/50 flex flex-col p-4 overflow-hidden min-h-0 ${mobileView === 'wardrobe' ? 'hidden md:flex' : 'flex'}`}>
+      {/* Main Content Area - Modified for Vertical Scroll on Mobile */}
+      <div className="flex-1 overflow-y-auto md:overflow-hidden relative flex flex-col md:flex-row">
+        
+        {/* Left: Fitting Room (Top on mobile) */}
+        <div className="w-full md:flex-1 shrink-0 p-4 bg-slate-50/50 flex flex-col gap-4">
           
           {/* Personal Model Profile Card */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 mb-3 flex gap-3 items-start shrink-0">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 flex gap-3 items-start shrink-0">
              <div className="relative group shrink-0">
                  <div className="w-16 h-20 bg-slate-100 rounded-lg overflow-hidden flex items-center justify-center border border-slate-100 shadow-inner">
                      {bodyImage ? (
@@ -583,7 +581,7 @@ const App = () => {
              </div>
           </div>
 
-          <div className="flex justify-between items-end mb-3 shrink-0">
+          <div className="flex justify-between items-end shrink-0">
             <div>
                 <h2 className="text-lg font-bold text-slate-800">搭配清單</h2>
                 <div className="flex items-center gap-1 mt-0.5 text-xs text-slate-500">
@@ -614,7 +612,7 @@ const App = () => {
 
           {/* AI Recommendation Box */}
           {weatherAdvice && (
-            <div className="mb-3 bg-white border border-sky-100 p-3 rounded-2xl shadow-sm flex gap-3 items-start animate-in slide-in-from-top-2 shrink-0">
+            <div className="bg-white border border-sky-100 p-3 rounded-2xl shadow-sm flex gap-3 items-start animate-in slide-in-from-top-2 shrink-0">
                 <div className="p-1.5 bg-sky-100 rounded-full shrink-0">
                     <Sparkles className="w-4 h-4 text-sky-600" />
                 </div>
@@ -629,14 +627,14 @@ const App = () => {
           )}
 
           {/* Selected Items Grid */}
-          <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 overflow-y-auto min-h-0 mb-16 md:mb-0">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 overflow-y-auto min-h-[150px] md:h-full md:flex-1">
             {selectedItems.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3">
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3 py-8">
                     <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center">
                         <Shirt size={32} className="opacity-50" />
                     </div>
                     <p className="text-sm text-center">
-                        點擊下方「衣櫃」選擇單品，<br/>或使用上方「天氣推薦」。
+                        點擊下方衣櫃選擇單品，<br/>或使用上方「天氣推薦」。
                     </p>
                 </div>
             ) : (
@@ -650,7 +648,7 @@ const App = () => {
                             </div>
                             <button 
                                 onClick={() => toggleSelection(item)}
-                                className="absolute top-1 right-1 p-1 bg-white text-rose-500 rounded-full shadow-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all hover:bg-rose-50"
+                                className="absolute top-1 right-1 p-1 bg-white text-rose-500 rounded-full shadow-sm opacity-100 transition-all hover:bg-rose-50"
                             >
                                 <X size={12} />
                             </button>
@@ -661,9 +659,9 @@ const App = () => {
           </div>
         </div>
 
-        {/* Right: Wardrobe Sidebar (Desktop & Mobile Tab) */}
-        <div className={`bg-white border-l border-slate-200 flex flex-col shadow-xl z-20 min-h-0 w-full md:w-96 absolute inset-0 md:static ${mobileView === 'fitting' ? 'hidden md:flex' : 'flex'}`}>
-          <div className="p-4 border-b border-slate-100 shrink-0">
+        {/* Right: Wardrobe Sidebar (Bottom on mobile) */}
+        <div className="w-full md:w-96 shrink-0 bg-white border-t md:border-t-0 md:border-l border-slate-200 flex flex-col shadow-xl z-20">
+          <div className="p-4 border-b border-slate-100 shrink-0 sticky top-0 bg-white z-10">
             <h2 className="font-bold text-slate-800 mb-3 text-lg">我的衣櫃庫存</h2>
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               {(['all', 'top', 'bottom', 'outerwear', 'shoes', 'accessory'] as const).map(cat => (
@@ -686,7 +684,7 @@ const App = () => {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 pb-24 md:pb-4">
+          <div className="p-4 bg-slate-50/50 min-h-[300px] md:h-full md:overflow-y-auto">
             <div className="grid grid-cols-2 gap-3">
               {wardrobe
                 .filter(item => activeTab === 'all' || item.category === activeTab)
@@ -717,7 +715,7 @@ const App = () => {
                                 e.stopPropagation();
                                 deleteFromWardrobe(item.id);
                             }}
-                            className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-full text-slate-400 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all hover:text-rose-500 hover:bg-rose-50"
+                            className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-full text-slate-400 opacity-100 transition-all hover:text-rose-500 hover:bg-rose-50"
                         >
                             <Trash2 size={12} />
                         </button>
@@ -731,28 +729,6 @@ const App = () => {
               )}
             </div>
           </div>
-        </div>
-
-        {/* Mobile Bottom Navigation Bar */}
-        <div className="md:hidden absolute bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center p-2 z-30 pb-safe">
-            <button 
-                onClick={() => setMobileView('fitting')}
-                className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors ${mobileView === 'fitting' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400'}`}
-            >
-                <Home size={20} />
-                <span className="text-[10px] font-medium">試衣間</span>
-            </button>
-            
-            <div className="w-px h-8 bg-slate-100"></div>
-
-            <button 
-                onClick={() => setMobileView('wardrobe')}
-                className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors ${mobileView === 'wardrobe' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400'}`}
-            >
-                <LayoutGrid size={20} />
-                <span className="text-[10px] font-medium">我的衣櫃</span>
-                {wardrobe.length > 0 && <span className="absolute top-2 ml-4 w-2 h-2 bg-rose-500 rounded-full"></span>}
-            </button>
         </div>
 
       </div>
