@@ -3,7 +3,7 @@ import { Camera, Plus, Trash2, Shirt, CheckCircle2, CloudSun, Sparkles, Loader2,
 
 // --- Gemini API Configuration ---
 // 注意：部署到 Vercel 後，您需要設定環境變數或在此填入您的 API Key
-const apiKey = ""; 
+const apiKey = "AIzaSyCUcwoLxv_aCAEnl3fMurNwzwBU_wUFPj8"; 
 
 // 定義 Gemini API 的請求結構類型
 interface GeminiPart {
