@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Camera, Plus, Trash2, Shirt, CheckCircle2, CloudSun, Sparkles, Loader2, X, User, Wand2, Ruler, ThermometerSun, Pencil, Download } from 'lucide-react';
 
 // --- Gemini API Configuration ---
-const apiKey = ""; 
+const apiKey = "AIzaSyCUcwoLxv_aCAEnl3fMurNwzwBU_wUFPj8"; 
 
 // 定義 Gemini API 的請求結構類型
 interface GeminiPart {
