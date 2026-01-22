@@ -127,8 +127,6 @@ const App = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [isEditingStats, setIsEditingStats] = useState(false);
   
-  // Removed mobileView state (No longer needed for vertical scroll layout)
-
   // Body Model State
   const [bodyImage, setBodyImage] = useState<string | null>(null);
   
@@ -543,7 +541,7 @@ const App = () => {
         </div>
       </header>
 
-      {/* Main Content Area - Modified for Vertical Scroll on Mobile */}
+      {/* Main Content Area - Vertical Scroll for Mobile */}
       <div className="flex-1 overflow-y-auto md:overflow-hidden relative flex flex-col md:flex-row">
         
         {/* Left: Fitting Room (Top on mobile) */}
