@@ -6,9 +6,8 @@ import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query } f
 
 // --- Global Variables & Config ---
 const firebaseConfig = JSON.parse(typeof window !== 'undefined' && (window as any).__firebase_config || '{}');
-
-// CRITICAL FIX: Sanitize App ID to keep it unique but valid for Firestore (replace slashes with underscores)
 const rawAppId = typeof window !== 'undefined' && (window as any).__app_id ? (window as any).__app_id : 'default-app-id';
+// FIX: Ensure valid path for Firestore
 const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_'); 
 
 // ⬇️⬇️⬇️ 請在這裡填入您的 API Key ⬇️⬇️⬇️
@@ -41,10 +40,19 @@ const compressImage = (base64Str: string, maxWidth = 600): Promise<string> => {
             canvas.height = img.height * ratio;
             const ctx = canvas.getContext('2d');
             ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL('image/jpeg', 0.7));
+            resolve(canvas.toDataURL('image/jpeg', 0.6)); // Lower quality slightly for storage safety
         };
         img.onerror = () => resolve(base64Str);
     });
+};
+
+const safeLocalStorageSet = (key: string, value: string) => {
+    try {
+        localStorage.setItem(key, value);
+    } catch (e) {
+        console.error("Storage full:", e);
+        alert("手機儲存空間已滿，無法儲存更多衣物。建議刪除一些舊衣物。");
+    }
 };
 
 // --- Gemini API 呼叫 ---
@@ -120,7 +128,7 @@ const App = () => {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [currentWeather, setCurrentWeather] = useState("氣溫 22°C，多雲");
 
-  // --- 驗證與同步設定 ---
+  // --- Auth & Sync ---
   useEffect(() => {
     const initAuth = async () => {
       if (!auth) return;
@@ -159,22 +167,26 @@ const App = () => {
                 const data = doc.data() as any;
                 if (data.syncId === syncId) items.push({ id: doc.id, ...data });
             });
-            if (items.length > 0) setWardrobe(items);
+            if (items.length > 0) {
+                 // Only update if cloud has content, to avoid wiping local on connection error
+                 setWardrobe(items);
+            }
         }, (err) => {
             console.error("Sync Error:", err);
-            setSyncError("連線錯誤，目前顯示本機資料");
-            // setIsSyncing(false); 
+            setSyncError("雲端連線受限 (僅本機模式)");
+            setIsSyncing(false); // Auto downgrade to local mode on error
         });
         return () => unsub();
     } catch (e) {
-        setSyncError("連線錯誤");
+        setSyncError("連線設定錯誤");
+        setIsSyncing(false);
     }
   }, [user, isSyncing, syncId]);
 
-  // 本機備份
-  useEffect(() => { localStorage.setItem('my_wardrobe', JSON.stringify(wardrobe)); }, [wardrobe]);
-  useEffect(() => { if (bodyImage) localStorage.setItem('my_body_model', bodyImage); }, [bodyImage]);
-  useEffect(() => { localStorage.setItem('my_body_stats', JSON.stringify(bodyStats)); }, [bodyStats]);
+  // 本機備份 (使用 safe set)
+  useEffect(() => { safeLocalStorageSet('my_wardrobe', JSON.stringify(wardrobe)); }, [wardrobe]);
+  useEffect(() => { if (bodyImage) safeLocalStorageSet('my_body_model', bodyImage); }, [bodyImage]);
+  useEffect(() => { safeLocalStorageSet('my_body_stats', JSON.stringify(bodyStats)); }, [bodyStats]);
 
   const handleStartSync = () => { if (!syncId.trim()) return; localStorage.setItem('my_wardrobe_sync_id', syncId); setIsSyncing(true); };
   const handleLogout = () => { localStorage.removeItem('my_wardrobe_sync_id'); setIsSyncing(false); setSyncId(""); setWardrobe([]); setSyncError(null); };
@@ -184,30 +196,34 @@ const App = () => {
     const compressedImage = await compressImage(newItemImage);
     const newItem = { name: newItemName, category: newItemCategory, image: compressedImage, syncId: syncId, createdAt: Date.now() };
     
+    // Optimistic Update: 先顯示在 UI 上
+    const localItem = { ...newItem, id: Date.now().toString() } as ClothingItem;
+    setWardrobe(prev => [...prev, localItem]);
+    setNewItemName(''); setNewItemImage(null); setIsAdding(false);
+
+    // Then try cloud sync
     if (db && user && isSyncing) {
         try {
             await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items'), newItem);
         } catch (e) {
-            alert("上傳雲端失敗，僅儲存於本機");
-            const localItem = { ...newItem, id: Date.now().toString() } as ClothingItem;
-            setWardrobe(prev => [...prev, localItem]);
+            console.error("Cloud upload failed", e);
+            // Silent fail is okay because we already added locally.
+            // Sync status will show error if persistent.
         }
-    } else {
-        const localItem = { ...newItem, id: Date.now().toString() } as ClothingItem;
-        setWardrobe(prev => [...prev, localItem]);
     }
-    setNewItemName(''); setNewItemImage(null); setIsAdding(false);
   };
 
   const deleteFromWardrobe = async (id: string) => {
     if (!confirm('確定刪除？')) return;
+    
+    // Optimistic Delete
+    setWardrobe(prev => prev.filter(item => item.id !== id));
+    setSelectedItems(prev => prev.filter(item => item.id !== id));
+
     if (db && user && isSyncing) {
         try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items', id)); } 
-        catch (e) { alert("雲端刪除失敗"); }
-    } else {
-        setWardrobe(wardrobe.filter(item => item.id !== id));
+        catch (e) { console.error("Cloud delete failed"); }
     }
-    setSelectedItems(selectedItems.filter(item => item.id !== id));
   };
 
   const handleAutoTag = async () => {
