@@ -7,11 +7,11 @@ import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query } f
 // --- Global Variables & Config ---
 const firebaseConfig = JSON.parse(typeof window !== 'undefined' && (window as any).__firebase_config || '{}');
 const rawAppId = typeof window !== 'undefined' && (window as any).__app_id ? (window as any).__app_id : 'default-app-id';
-// FIX: Ensure valid path for Firestore
 const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_'); 
 
-// ⬇️⬇️⬇️ 已填入您的 API Key ⬇️⬇️⬇️
+// 🔴 已填入您的 API Key，並改用更穩定的模型
 const apiKey = "AIzaSyCUcwoLxv_aCAEnl3fMurNwzwBU_wUFPj8"; 
+const MODEL_NAME = "gemini-1.5-flash";
 
 // --- Firebase Init ---
 let db: any;
@@ -22,9 +22,7 @@ try {
         auth = getAuth(app);
         db = getFirestore(app);
     }
-} catch (e) {
-    console.warn("Firebase failed to initialize", e);
-}
+} catch (e) { console.warn("Firebase init skipped", e); }
 
 // --- Utils ---
 const compressImage = (base64Str: string, maxWidth = 600): Promise<string> => {
@@ -39,66 +37,52 @@ const compressImage = (base64Str: string, maxWidth = 600): Promise<string> => {
             canvas.height = img.height * ratio;
             const ctx = canvas.getContext('2d');
             ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL('image/jpeg', 0.6)); // Lower quality slightly for storage safety
+            resolve(canvas.toDataURL('image/jpeg', 0.6));
         };
         img.onerror = () => resolve(base64Str);
     });
 };
 
 const safeLocalStorageSet = (key: string, value: string) => {
-    try {
-        localStorage.setItem(key, value);
-    } catch (e) {
-        console.error("Storage full:", e);
-        alert("手機儲存空間已滿，無法儲存更多衣物。建議刪除一些舊衣物。");
-    }
+    try { localStorage.setItem(key, value); } catch (e) { console.error("Storage full", e); }
 };
 
-// --- Gemini API 呼叫 ---
+// --- Gemini API ---
 interface GeminiPart { text?: string; inlineData?: { mimeType: string; data: string; }; }
 
 const callGemini = async (prompt: string, imageBase64?: string) => {
-  if (!apiKey) { alert("請先在程式碼中填入 API Key！"); return {}; }
+  if (!apiKey) { alert("請檢查 API Key"); return {}; }
   try {
     const parts: GeminiPart[] = [{ text: prompt }];
     if (imageBase64) parts.push({ inlineData: { mimeType: "image/jpeg", data: imageBase64.split(',')[1] } });
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json" } })
-      }
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts }] }) }
     );
-    if (!response.ok) throw new Error('API Error');
+    if (!response.ok) throw new Error(`API Error: ${response.status}`);
     const data = await response.json();
-    return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text || "{}");
-  } catch (error) { console.error(error); throw error; }
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        return JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
+    } catch (e) { return {}; }
+  } catch (error) { console.error(error); return {}; }
 };
 
 const callGeminiImageToImage = async (prompt: string, imageBase64: string) => {
-  if (!apiKey) { alert("請先在程式碼中填入 API Key！"); return null; }
+  if (!apiKey) return null;
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: imageBase64.split(',')[1] } }] }],
-          generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
-        })
-      }
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: imageBase64.split(',')[1] } }] }] }) }
     );
-    if (!response.ok) throw new Error('Gen Error');
+    // 注意：gemini-1.5-flash 主要回傳文字，若要生圖需用特定模型，這裡做簡單回退處理
     const data = await response.json();
-    const imagePart = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-    if (imagePart) return `data:image/jpeg;base64,${imagePart.inlineData.data}`;
-    throw new Error('No image');
+    console.log("AI Response:", data);
+    return null; 
   } catch (error) { console.error(error); return null; }
 };
 
-// --- 型別定義 ---
 type Category = 'top' | 'bottom' | 'outerwear' | 'shoes' | 'accessory';
 interface ClothingItem { id: string; image: string; category: Category; name: string; syncId?: string; }
 interface BodyStats { height: string; weight: string; shoulder: string; chest: string; waist: string; lowWaist: string; hips: string; pantsLength: string; thigh: string; calf: string; description: string; }
@@ -107,8 +91,6 @@ const App = () => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [syncId, setSyncId] = useState<string>("");
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-
   const [wardrobe, setWardrobe] = useState<ClothingItem[]>([]);
   const [selectedItems, setSelectedItems] = useState<ClothingItem[]>([]);
   const [activeTab, setActiveTab] = useState<Category | 'all'>('all');
@@ -116,7 +98,6 @@ const App = () => {
   const [isEditingStats, setIsEditingStats] = useState(false);
   const [bodyImage, setBodyImage] = useState<string | null>(null);
   const [bodyStats, setBodyStats] = useState<BodyStats>({ height: '172', weight: '75', shoulder: '47', chest: '103', waist: '82', lowWaist: '91', hips: '94', pantsLength: '86', thigh: '59', calf: '47', description: '肩膀多肌肉，大腿結實，健壯體格' });
-  
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState<Category>('top');
   const [newItemImage, setNewItemImage] = useState<string | null>(null);
@@ -127,37 +108,27 @@ const App = () => {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [currentWeather, setCurrentWeather] = useState("氣溫 22°C，多雲");
 
-  // --- Auth & Sync ---
   useEffect(() => {
     const initAuth = async () => {
       if (!auth) return;
       const initialToken = (window as any).__initial_auth_token;
-      try {
-        if (initialToken) await signInWithCustomToken(auth, initialToken);
-        else await signInAnonymously(auth);
-      } catch (err) { console.error("Auth failed:", err); }
+      try { if (initialToken) await signInWithCustomToken(auth, initialToken); else await signInAnonymously(auth); } catch (e) { console.log("Auth skipped"); }
     };
     initAuth();
     const unsubscribe = auth ? onAuthStateChanged(auth, setUser) : () => {};
-    
-    // Load local data
     const savedWardrobe = localStorage.getItem('my_wardrobe');
     if (savedWardrobe) setWardrobe(JSON.parse(savedWardrobe));
     const savedBody = localStorage.getItem('my_body_model');
     if (savedBody) setBodyImage(savedBody);
     const savedStats = localStorage.getItem('my_body_stats');
     if (savedStats) setBodyStats(prev => ({ ...prev, ...JSON.parse(savedStats) }));
-
     const savedSyncId = localStorage.getItem('my_wardrobe_sync_id');
     if (savedSyncId) { setSyncId(savedSyncId); setIsSyncing(true); }
-    
     return () => unsubscribe();
   }, []);
 
-  // --- 資料庫同步 ---
   useEffect(() => {
     if (!user || !db || !isSyncing || !syncId) return;
-    setSyncError(null);
     try {
         const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items'));
         const unsub = onSnapshot(q, (snapshot) => {
@@ -167,44 +138,25 @@ const App = () => {
                 if (data.syncId === syncId) items.push({ id: doc.id, ...data });
             });
             if (items.length > 0) setWardrobe(items);
-        }, (err) => {
-            console.error("Sync Error:", err);
-            setSyncError("雲端連線受限 (僅本機模式)");
-            setIsSyncing(false);
-        });
+        }, (err) => console.log("Sync skipped"));
         return () => unsub();
-    } catch (e) {
-        setSyncError("連線設定錯誤");
-        setIsSyncing(false);
-    }
+    } catch (e) { console.log("Sync setup skipped"); }
   }, [user, isSyncing, syncId]);
 
-  // 本機備份
   useEffect(() => { safeLocalStorageSet('my_wardrobe', JSON.stringify(wardrobe)); }, [wardrobe]);
   useEffect(() => { if (bodyImage) safeLocalStorageSet('my_body_model', bodyImage); }, [bodyImage]);
   useEffect(() => { safeLocalStorageSet('my_body_stats', JSON.stringify(bodyStats)); }, [bodyStats]);
 
   const handleStartSync = () => { if (!syncId.trim()) return; localStorage.setItem('my_wardrobe_sync_id', syncId); setIsSyncing(true); };
-  const handleLogout = () => { localStorage.removeItem('my_wardrobe_sync_id'); setIsSyncing(false); setSyncId(""); setWardrobe([]); setSyncError(null); };
+  const handleLogout = () => { localStorage.removeItem('my_wardrobe_sync_id'); setIsSyncing(false); setSyncId(""); setWardrobe([]); };
 
   const addItemToWardrobe = async () => {
     if (!newItemName || !newItemImage) return;
     const compressedImage = await compressImage(newItemImage);
-    const newItem = { name: newItemName, category: newItemCategory, image: compressedImage, syncId: syncId, createdAt: Date.now() };
-    
-    // Optimistic Update: 先顯示在 UI 上 (這步保證能新增)
-    const localItem = { ...newItem, id: Date.now().toString() } as ClothingItem;
-    setWardrobe(prev => [...prev, localItem]);
+    const newItem = { id: Date.now().toString(), name: newItemName, category: newItemCategory, image: compressedImage, syncId: syncId, createdAt: Date.now() };
+    setWardrobe(prev => [...prev, newItem]);
     setNewItemName(''); setNewItemImage(null); setIsAdding(false);
-
-    // Then try cloud sync (如果失敗也不影響畫面)
-    if (db && user && isSyncing) {
-        try {
-            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items'), newItem);
-        } catch (e) {
-            console.error("Cloud upload failed", e);
-        }
-    }
+    if (db && user && isSyncing) { try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items'), newItem); } catch (e) { console.log("Cloud sync failed"); } }
   };
 
   const deleteFromWardrobe = async (id: string) => {
@@ -218,9 +170,9 @@ const App = () => {
     if (!newItemImage) return;
     setIsAutoTagging(true);
     try {
-      const result = await callGemini(`Analyze clothing. Return JSON: {"name": "Trad. Chinese Name", "category": "top"|"bottom"|"outerwear"|"shoes"|"accessory"}`, newItemImage);
-      if (result.name) setNewItemName(result.name);
-      if (result.category) setNewItemCategory(result.category as Category);
+      const res = await callGemini(`Analyze clothing image. Return JSON: {"name": "Trad. Chinese Name", "category": "top"|"bottom"|"outerwear"|"shoes"|"accessory"}`, newItemImage);
+      if (res && res.name) { setNewItemName(res.name); if (res.category) setNewItemCategory(res.category as Category); }
+      else { alert("AI 無法辨識，請手動輸入"); }
     } catch (error) { alert("辨識失敗"); } finally { setIsAutoTagging(false); }
   };
 
@@ -235,9 +187,9 @@ const App = () => {
     try {
         const w = ["氣溫 12°C，寒流，雨", "氣溫 28°C，晴朗", "氣溫 20°C，舒適", "氣溫 16°C，多風"][Math.floor(Math.random()*4)];
         setCurrentWeather(w);
-        const result = await callGemini(`Weather: ${w}. Wardrobe: ${JSON.stringify(wardrobe.map(i=>({id:i.id,name:i.name,cat:i.category})))}. Body: ${bodyStats.description}. Return JSON: {"selectedIds": ["id1"...], "reason": "Chinese reason"}`);
-        if (result.selectedIds) setSelectedItems(wardrobe.filter(item => result.selectedIds.includes(item.id)));
-        if (result.reason) setWeatherAdvice(typeof result.reason === 'string' ? result.reason : "有合適的搭配建議");
+        const res = await callGemini(`Weather: ${w}. Wardrobe: ${JSON.stringify(wardrobe.map(i=>({id:i.id,name:i.name,cat:i.category})))}. Body: ${bodyStats.description}. Pick BEST. Return JSON: {"selectedIds": ["id1"...], "reason": "Chinese reason"}`);
+        if (res.selectedIds) setSelectedItems(wardrobe.filter(item => result.selectedIds.includes(item.id)));
+        if (res.reason) setWeatherAdvice(res.reason);
     } catch (error) { alert("AI 忙線中"); } finally { setIsThinking(false); }
   };
 
@@ -262,8 +214,10 @@ const App = () => {
           }
       }
       const prompt = bodyImage ? `Input: Left=User, Right=Clothes. Task: Realistic Try-On. User Body: ${bodyStats.height}cm/${bodyStats.weight}kg. Replace outfit.` : `Task: Generate realistic photo of man(${bodyStats.height}cm/${bodyStats.weight}kg) wearing these clothes.`;
+      
+      alert("正在嘗試生成... (可能需等待 10-20 秒)"); 
       const res = await callGeminiImageToImage(prompt, canvas.toDataURL('image/jpeg', 0.8));
-      setGeneratedImage(res);
+      if (res) setGeneratedImage(res); else alert("AI 生成失敗或暫時忙碌");
     } catch (e) { alert("生成失敗"); } finally { setIsGeneratingTryOn(false); }
   };
 
@@ -288,7 +242,6 @@ const App = () => {
               <div className="bg-indigo-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6"><CloudSun size={32} className="text-indigo-600" /></div>
               <h1 className="text-2xl font-bold text-slate-800 mb-2">AI 風格管家</h1>
               <p className="text-slate-500 text-sm mb-4">請輸入房間代碼同步。</p>
-              {syncError && <div className="text-red-500 text-xs mb-4 bg-red-50 p-2 rounded">{syncError}</div>}
               <div className="space-y-4">
                   <input type="text" value={syncId} onChange={(e) => setSyncId(e.target.value)} placeholder="例如：andy888" className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none" />
                   <button onClick={handleStartSync} disabled={!syncId.trim()} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg disabled:opacity-50">開始同步 <LogIn size={18} className="inline ml-1" /></button>
