@@ -11,7 +11,9 @@ const firebaseConfig = JSON.parse(typeof window !== 'undefined' && (window as an
 const rawAppId = typeof window !== 'undefined' && (window as any).__app_id ? (window as any).__app_id : 'default-app-id';
 const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_'); 
 
-const apiKey = ""; // 請填入您的 Google Gemini API Key
+// ⬇️⬇️⬇️ 請在這裡填入您的 API Key ⬇️⬇️⬇️
+const apiKey = "AIzaSyCUcwoLxv_aCAEnl3fMurNwzwBU_wUFPj8"; 
+// ⬆️⬆️⬆️ 範例： const apiKey = "AIzaSyDxxxx...";
 
 // --- Firebase Init ---
 let db: any;
@@ -49,6 +51,7 @@ const compressImage = (base64Str: string, maxWidth = 600): Promise<string> => {
 interface GeminiPart { text?: string; inlineData?: { mimeType: string; data: string; }; }
 
 const callGemini = async (prompt: string, imageBase64?: string) => {
+  if (!apiKey) { alert("請先在程式碼中填入 API Key！"); return {}; }
   try {
     const parts: GeminiPart[] = [{ text: prompt }];
     if (imageBase64) parts.push({ inlineData: { mimeType: "image/jpeg", data: imageBase64.split(',')[1] } });
@@ -67,6 +70,7 @@ const callGemini = async (prompt: string, imageBase64?: string) => {
 };
 
 const callGeminiImageToImage = async (prompt: string, imageBase64: string) => {
+  if (!apiKey) { alert("請先在程式碼中填入 API Key！"); return null; }
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
@@ -159,6 +163,7 @@ const App = () => {
         }, (err) => {
             console.error("Sync Error:", err);
             setSyncError("連線錯誤，目前顯示本機資料");
+            // setIsSyncing(false); 
         });
         return () => unsub();
     } catch (e) {
