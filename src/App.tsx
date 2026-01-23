@@ -167,13 +167,10 @@ const App = () => {
                 const data = doc.data() as any;
                 if (data.syncId === syncId) items.push({ id: doc.id, ...data });
             });
-            if (items.length > 0) {
-                 // Only update if cloud has content, to avoid wiping local on connection error
-                 setWardrobe(items);
-            }
+            if (items.length > 0) setWardrobe(items);
         }, (err) => {
             console.error("Sync Error:", err);
-            setSyncError("雲端連線受限 (僅本機模式)");
+            setSyncError("連線錯誤，目前顯示本機資料");
             setIsSyncing(false); // Auto downgrade to local mode on error
         });
         return () => unsub();
@@ -183,7 +180,7 @@ const App = () => {
     }
   }, [user, isSyncing, syncId]);
 
-  // 本機備份 (使用 safe set)
+  // 本機備份
   useEffect(() => { safeLocalStorageSet('my_wardrobe', JSON.stringify(wardrobe)); }, [wardrobe]);
   useEffect(() => { if (bodyImage) safeLocalStorageSet('my_body_model', bodyImage); }, [bodyImage]);
   useEffect(() => { safeLocalStorageSet('my_body_stats', JSON.stringify(bodyStats)); }, [bodyStats]);
@@ -196,34 +193,26 @@ const App = () => {
     const compressedImage = await compressImage(newItemImage);
     const newItem = { name: newItemName, category: newItemCategory, image: compressedImage, syncId: syncId, createdAt: Date.now() };
     
-    // Optimistic Update: 先顯示在 UI 上
+    // Optimistic Update: 先顯示在 UI 上 (這步保證能新增)
     const localItem = { ...newItem, id: Date.now().toString() } as ClothingItem;
     setWardrobe(prev => [...prev, localItem]);
     setNewItemName(''); setNewItemImage(null); setIsAdding(false);
 
-    // Then try cloud sync
+    // Then try cloud sync (如果失敗也不影響畫面)
     if (db && user && isSyncing) {
         try {
             await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items'), newItem);
         } catch (e) {
             console.error("Cloud upload failed", e);
-            // Silent fail is okay because we already added locally.
-            // Sync status will show error if persistent.
         }
     }
   };
 
   const deleteFromWardrobe = async (id: string) => {
     if (!confirm('確定刪除？')) return;
-    
-    // Optimistic Delete
     setWardrobe(prev => prev.filter(item => item.id !== id));
     setSelectedItems(prev => prev.filter(item => item.id !== id));
-
-    if (db && user && isSyncing) {
-        try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items', id)); } 
-        catch (e) { console.error("Cloud delete failed"); }
-    }
+    if (db && user && isSyncing) { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items', id)); } catch (e) { console.log("Cloud delete failed"); } }
   };
 
   const handleAutoTag = async () => {
