@@ -10,9 +10,8 @@ const rawAppId = typeof window !== 'undefined' && (window as any).__app_id ? (wi
 // FIX: Ensure valid path for Firestore
 const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_'); 
 
-// ⬇️⬇️⬇️ 請在這裡填入您的 API Key ⬇️⬇️⬇️
+// ⬇️⬇️⬇️ 已填入您的 API Key ⬇️⬇️⬇️
 const apiKey = "AIzaSyCUcwoLxv_aCAEnl3fMurNwzwBU_wUFPj8"; 
-// ⬆️⬆️⬆️ 範例： const apiKey = "AIzaSyDxxxx...";
 
 // --- Firebase Init ---
 let db: any;
@@ -170,8 +169,8 @@ const App = () => {
             if (items.length > 0) setWardrobe(items);
         }, (err) => {
             console.error("Sync Error:", err);
-            setSyncError("連線錯誤，目前顯示本機資料");
-            setIsSyncing(false); // Auto downgrade to local mode on error
+            setSyncError("雲端連線受限 (僅本機模式)");
+            setIsSyncing(false);
         });
         return () => unsub();
     } catch (e) {
