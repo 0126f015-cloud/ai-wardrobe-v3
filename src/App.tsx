@@ -9,9 +9,9 @@ const firebaseConfig = JSON.parse(typeof window !== 'undefined' && (window as an
 const rawAppId = typeof window !== 'undefined' && (window as any).__app_id ? (window as any).__app_id : 'default-app-id';
 const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_'); 
 
-// ⬇️⬇️⬇️ 已填入您的 API Key ⬇️⬇️⬇️
+// ⬇️⬇️⬇️ 已填入您的 API Key (Gemini 1.5 Flash) ⬇️⬇️⬇️
 const apiKey = "AIzaSyCUcwoLxv_aCAEnl3fMurNwzwBU_wUFPj8"; 
-const MODEL_NAME = "gemini-1.5-flash";
+const MODEL_NAME = "gemini-1.5-flash-001"; // 使用穩定版模型
 
 // --- Firebase Init ---
 let db: any;
@@ -53,7 +53,7 @@ const safeLocalStorageSet = (key: string, value: string) => {
     }
 };
 
-// --- Gemini API 呼叫 ---
+// --- Gemini API 呼叫 (Text Only) ---
 interface GeminiPart { text?: string; inlineData?: { mimeType: string; data: string; }; }
 
 const callGemini = async (prompt: string, imageBase64?: string) => {
@@ -80,7 +80,6 @@ const callGemini = async (prompt: string, imageBase64?: string) => {
     } catch { return {}; }
   } catch (error: any) { 
       alert(`AI 錯誤: ${error.message}`);
-      console.error(error); 
       throw error; 
   }
 };
@@ -114,7 +113,6 @@ const App = () => {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [currentWeather, setCurrentWeather] = useState("氣溫 22°C，多雲");
 
-  // --- Auth & Sync ---
   useEffect(() => {
     const initAuth = async () => {
       if (!auth) return;
@@ -140,7 +138,6 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // --- Sync ---
   useEffect(() => {
     if (!user || !db || !isSyncing || !syncId) return;
     setSyncError(null);
@@ -159,7 +156,10 @@ const App = () => {
             setIsSyncing(false);
         });
         return () => unsub();
-    } catch (e) { setSyncError("連線錯誤"); setIsSyncing(false); }
+    } catch (e) {
+        setSyncError("連線設定錯誤");
+        setIsSyncing(false);
+    }
   }, [user, isSyncing, syncId]);
 
   useEffect(() => { safeLocalStorageSet('my_wardrobe', JSON.stringify(wardrobe)); }, [wardrobe]);
@@ -217,6 +217,7 @@ const App = () => {
     if (selectedItems.length === 0) return;
     setIsGeneratingTryOn(true); setGeneratedImage(null);
     try {
+      // 智慧拼貼模式 (不使用 AI 生成圖片，避免權限錯誤)
       const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); canvas.width = 1200; canvas.height = 800;
       if (ctx) {
           ctx.fillStyle='#fff'; ctx.fillRect(0,0,1200,800);
@@ -233,9 +234,9 @@ const App = () => {
               ctx.drawImage(img, 600 + (i%2)*300 + (300-img.width*scale)/2, Math.floor(i/2)*400 + (400-img.height*scale)/2, img.width*scale, img.height*scale);
           }
       }
-      // 直接顯示拼貼圖作為試穿結果 (因為免費用戶無法生成圖片)
       setGeneratedImage(canvas.toDataURL('image/jpeg', 0.8));
-      alert("已生成試穿預覽 (使用拼貼模式)");
+      // 成功後顯示提示
+      // alert("已為您合成試穿預覽圖！");
     } catch (e) { alert("生成失敗"); } finally { setIsGeneratingTryOn(false); }
   };
 
