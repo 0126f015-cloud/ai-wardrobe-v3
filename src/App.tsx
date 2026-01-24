@@ -7,11 +7,12 @@ import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query } f
 // --- Global Variables & Config ---
 const firebaseConfig = JSON.parse(typeof window !== 'undefined' && (window as any).__firebase_config || '{}');
 const rawAppId = typeof window !== 'undefined' && (window as any).__app_id ? (window as any).__app_id : 'default-app-id';
+// FIX: Ensure valid path for Firestore by sanitizing ID
 const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_'); 
 
-// ⬇️⬇️⬇️ 已填入您的 API Key (Gemini 1.5 Flash) ⬇️⬇️⬇️
+// ⬇️⬇️⬇️ 已填入您的 API Key ⬇️⬇️⬇️
 const apiKey = "AIzaSyCUcwoLxv_aCAEnl3fMurNwzwBU_wUFPj8"; 
-const MODEL_NAME = "gemini-1.5-flash"; // 改用標準版模型，相容性最高
+const MODEL_NAME = "gemini-1.5-flash-latest"; // 使用最新版模型
 
 // --- Firebase Init ---
 let db: any;
@@ -79,6 +80,7 @@ const callGemini = async (prompt: string, imageBase64?: string) => {
         return JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
     } catch { return {}; }
   } catch (error: any) { 
+      console.error(error);
       alert(`AI 錯誤: ${error.message}`);
       throw error; 
   }
@@ -139,12 +141,13 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // --- Sync ---
+  // --- 資料庫同步 (改用使用者私人路徑) ---
   useEffect(() => {
     if (!user || !db || !isSyncing || !syncId) return;
     setSyncError(null);
     try {
-        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items'));
+        // FIX: Change to private user path to avoid permission errors
+        const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'wardrobe_items'));
         const unsub = onSnapshot(q, (snapshot) => {
             const items: ClothingItem[] = [];
             snapshot.forEach((doc) => {
@@ -154,7 +157,7 @@ const App = () => {
             if (items.length > 0) setWardrobe(items);
         }, (err) => {
             console.error("Sync Error:", err);
-            setSyncError("連線受限 (僅本機模式)");
+            setSyncError("雲端連線受限 (僅本機模式)");
             setIsSyncing(false);
         });
         return () => unsub();
@@ -175,17 +178,27 @@ const App = () => {
     if (!newItemName || !newItemImage) return;
     const compressedImage = await compressImage(newItemImage);
     const newItem = { name: newItemName, category: newItemCategory, image: compressedImage, syncId: syncId, createdAt: Date.now() };
+    
+    // 1. 優先本地更新
     const localItem = { ...newItem, id: Date.now().toString() } as ClothingItem;
     setWardrobe(prev => [...prev, localItem]);
     setNewItemName(''); setNewItemImage(null); setIsAdding(false);
-    if (db && user && isSyncing) { try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items'), newItem); } catch (e) { console.log("Cloud sync failed"); } }
+
+    // 2. 背景同步 (使用私人路徑)
+    if (db && user && isSyncing) {
+        try {
+            await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'wardrobe_items'), newItem);
+        } catch (e) {
+            console.error("Cloud upload failed", e);
+        }
+    }
   };
 
   const deleteFromWardrobe = async (id: string) => {
     if (!confirm('確定刪除？')) return;
     setWardrobe(prev => prev.filter(item => item.id !== id));
     setSelectedItems(prev => prev.filter(item => item.id !== id));
-    if (db && user && isSyncing) { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'wardrobe_items', id)); } catch (e) { console.log("Cloud delete failed"); } }
+    if (db && user && isSyncing) { try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'wardrobe_items', id)); } catch (e) { console.log("Cloud delete failed"); } }
   };
 
   const handleAutoTag = async () => {
@@ -215,30 +228,38 @@ const App = () => {
     } catch (error) { alert("AI 連線錯誤"); } finally { setIsThinking(false); }
   };
 
+  // 🔴 使用 Canvas 拼貼代替 AI 生圖 (解決免費版 API 限制)
   const handleVirtualTryOn = async () => {
     if (selectedItems.length === 0) return;
     setIsGeneratingTryOn(true); setGeneratedImage(null);
+    
+    // 模擬一點載入感
+    await new Promise(r => setTimeout(r, 600));
+
     try {
-      // 智慧拼貼模式 (不使用 AI 生成圖片，避免權限錯誤)
       const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); canvas.width = 1200; canvas.height = 800;
       if (ctx) {
           ctx.fillStyle='#fff'; ctx.fillRect(0,0,1200,800);
+          
+          // 繪製身體 (左)
           if (bodyImage) {
               const img = await new Promise<HTMLImageElement>(r=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>r(i);i.src=bodyImage!});
               const scale = Math.min(600/img.width, 800/img.height)*0.9;
               ctx.drawImage(img, (600-img.width*scale)/2, (800-img.height*scale)/2, img.width*scale, img.height*scale);
           }
+          
+          // 繪製衣物 (右)
           ctx.fillStyle='#f8fafc'; ctx.fillRect(600,0,600,800);
           for(let i=0; i<selectedItems.length; i++) {
               const item = selectedItems[i];
               const img = await new Promise<HTMLImageElement>(r=>{const image=new Image();image.crossOrigin='anonymous';image.onload=()=>r(image);image.src=item.image});
               const scale = Math.min(300/img.width, 400/img.height)*0.8;
-              ctx.drawImage(img, 600 + (i%2)*300 + (300-img.width*scale)/2, Math.floor(i/2)*400 + (400-img.height*scale)/2, img.width*scale, img.height*scale);
+              const x = 600 + (i%2)*300 + (300-img.width*scale)/2;
+              const y = Math.floor(i/2)*400 + (400-img.height*scale)/2;
+              ctx.drawImage(img, x, y, img.width*scale, img.height*scale);
           }
       }
       setGeneratedImage(canvas.toDataURL('image/jpeg', 0.8));
-      // 成功後顯示提示
-      // alert("已為您合成試穿預覽圖！");
     } catch (e) { alert("生成失敗"); } finally { setIsGeneratingTryOn(false); }
   };
 
