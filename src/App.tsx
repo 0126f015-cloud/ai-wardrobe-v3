@@ -11,7 +11,7 @@ const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_');
 
 // ⬇️⬇️⬇️ 已填入您的 API Key (Gemini 1.5 Flash) ⬇️⬇️⬇️
 const apiKey = "AIzaSyCUcwoLxv_aCAEnl3fMurNwzwBU_wUFPj8"; 
-const MODEL_NAME = "gemini-1.5-flash-001"; // 使用穩定版模型
+const MODEL_NAME = "gemini-1.5-flash"; // 改用標準版模型，相容性最高
 
 // --- Firebase Init ---
 let db: any;
@@ -53,7 +53,7 @@ const safeLocalStorageSet = (key: string, value: string) => {
     }
 };
 
-// --- Gemini API 呼叫 (Text Only) ---
+// --- Gemini API 呼叫 ---
 interface GeminiPart { text?: string; inlineData?: { mimeType: string; data: string; }; }
 
 const callGemini = async (prompt: string, imageBase64?: string) => {
@@ -113,6 +113,7 @@ const App = () => {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [currentWeather, setCurrentWeather] = useState("氣溫 22°C，多雲");
 
+  // --- Auth & Sync ---
   useEffect(() => {
     const initAuth = async () => {
       if (!auth) return;
@@ -138,6 +139,7 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
+  // --- Sync ---
   useEffect(() => {
     if (!user || !db || !isSyncing || !syncId) return;
     setSyncError(null);
